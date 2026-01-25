@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="JihadAttorney.Cli/JihadAttorney.Cli.csproj" />
+  <Project Path="JihadAttorney.Llama/JihadAttorney.Llama.csproj" />
+</Solution>

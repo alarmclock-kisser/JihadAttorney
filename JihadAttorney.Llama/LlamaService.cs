@@ -128,7 +128,7 @@ namespace JihadAttorney.Llama
             var answer = await RunLlamaAsync(promptBuilder.ToString(), cancellationToken);
 
             var references = BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
-            if (!string.IsNullOrWhiteSpace(references))
+            if (!string.IsNullOrWhiteSpace(references)) 
             {
                 return string.Concat(answer, "\n\nReferenzen:\n", references);
             }

@@ -119,7 +119,7 @@ namespace JihadAttorney.Llama
             }
 
             var promptBuilder = new StringBuilder();
-            promptBuilder.AppendLine("You are a concise assistant. Answer in your own words based only on the provided Qur'an context. When you refer to verses, cite them as surah:ayah numbers inside the answer. Keep quotes balanced and closed.");
+            promptBuilder.AppendLine("You are a concise assistant. Each question is independent: do not rely on any previous answer. Answer in your own words based only on the provided Qur'an context. When you refer to verses, cite them as surah:ayah numbers inside the answer. Keep quotes balanced and closed.");
             promptBuilder.AppendLine("Context:");
             promptBuilder.AppendLine(contextBuilder.ToString());
             promptBuilder.AppendLine("Question: " + question);
@@ -369,6 +369,110 @@ namespace JihadAttorney.Llama
             public string Reference { get; set; } = string.Empty;
             public string Text { get; set; } = string.Empty;
             public float[] Vector { get; set; } = Array.Empty<float>();
+        }
+
+        public string GetReferenceText(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                return "Ungültiger Befehl.";
+            }
+
+            command = command.Trim();
+            if (command.Contains(':'))
+            {
+                // ayah or ayah-range: surah:aya or surah:aya1-aya2
+                var parts = command.Split(':');
+                if (parts.Length != 2 || !int.TryParse(parts[0], out var surahId))
+                {
+                    return "Ungültiges Ayah-Format.";
+                }
+
+                var surah = _surahs.FirstOrDefault(s => s.Id == surahId);
+                if (surah == null)
+                {
+                    return "Sure nicht gefunden.";
+                }
+
+                var ayaPart = parts[1];
+                if (ayaPart.Contains('-'))
+                {
+                    var range = ayaPart.Split('-');
+                    if (range.Length == 2 && int.TryParse(range[0], out var start) && int.TryParse(range[1], out var end))
+                    {
+                        return BuildSurahRange(surah, start, end);
+                    }
+
+                    return "Ungültiger Ayah-Bereich.";
+                }
+
+                if (!int.TryParse(ayaPart, out var ayaId))
+                {
+                    return "Ungültige Ayah.";
+                }
+
+                return BuildSurahRange(surah, ayaId, ayaId);
+            }
+
+            // surah or surah-range: 23 or 23-24
+            if (command.Contains('-'))
+            {
+                var range = command.Split('-');
+                if (range.Length == 2 && int.TryParse(range[0], out var start) && int.TryParse(range[1], out var end))
+                {
+                    var sb = new StringBuilder();
+                    for (var id = start; id <= end; id++)
+                    {
+                        var surah = _surahs.FirstOrDefault(s => s.Id == id);
+                        if (surah != null)
+                        {
+                            sb.AppendLine(BuildSurahRange(surah, 1, surah.Verses.Count)).AppendLine();
+                        }
+                    }
+
+                    return sb.Length > 0 ? sb.ToString().TrimEnd() : "Suren nicht gefunden.";
+                }
+
+                return "Ungültiger Suren-Bereich.";
+            }
+
+            if (!int.TryParse(command, out var surahOnly))
+            {
+                return "Ungültige Sure.";
+            }
+
+            var target = _surahs.FirstOrDefault(s => s.Id == surahOnly);
+            if (target == null)
+            {
+                return "Sure nicht gefunden.";
+            }
+
+            return BuildSurahRange(target, 1, target.Verses.Count);
+        }
+
+        private string BuildSurahRange(Surah surah, int startAya, int endAya)
+        {
+            var sb = new StringBuilder();
+            sb.Append("Sure ")
+              .Append(surah.Id)
+              .Append(" | ")
+              .AppendLine(surah.Transliteration);
+
+            var ordered = surah.Verses.OrderBy(v => v.Id);
+            foreach (var verse in ordered)
+            {
+                if (verse.Id < startAya || verse.Id > endAya)
+                {
+                    continue;
+                }
+
+                sb.Append(surah.Id).Append(":").Append(verse.Id).AppendLine();
+                sb.AppendLine(verse.Text);
+                sb.AppendLine(verse.Translation);
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
         }
     }
 }

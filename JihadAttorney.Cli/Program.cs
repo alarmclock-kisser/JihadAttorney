@@ -79,6 +79,7 @@ namespace JihadAttorney.Cli
             {
                 await llama.PrepareAsync();
                 Console.WriteLine("Bereit. Du kannst jetzt Fragen stellen.");
+                Console.WriteLine("Commands: /<sura>, /<sura>-<sura>, /<sura>:<ayah>, /<sura>:<start-end>");
             }
             catch (Exception ex)
             {
@@ -97,6 +98,15 @@ namespace JihadAttorney.Cli
                 if (string.IsNullOrWhiteSpace(question) || question.Equals("exit", StringComparison.OrdinalIgnoreCase))
                 {
                     break;
+                }
+
+                if (question.StartsWith("/"))
+                {
+                    var cmd = question.Substring(1);
+                    var result = llama.GetReferenceText(cmd);
+                    Console.WriteLine(result);
+                    Console.WriteLine();
+                    continue;
                 }
 
                 try

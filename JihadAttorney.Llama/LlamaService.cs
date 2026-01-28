@@ -86,11 +86,16 @@ namespace JihadAttorney.Llama
             }
         }
 
-        public async Task<string> AnswerQuestionAsync(string question, int topK = 3, CancellationToken cancellationToken = default)
+        public async Task<string> AnswerQuestionAsync(string question, string responseLanguage = "auto", int topK = 3, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(question))
             {
                 throw new ArgumentException("Question must not be empty", nameof(question));
+            }
+
+            if (TryHandleSlashQuery(question, out var slashResponse))
+            {
+                return slashResponse;
             }
 
             if (string.IsNullOrWhiteSpace(_selectedModelPath))
@@ -120,6 +125,7 @@ namespace JihadAttorney.Llama
 
             var promptBuilder = new StringBuilder();
             promptBuilder.AppendLine("You are a concise assistant. Answer in your own words based only on the provided Qur'an context. When you refer to verses, cite them as surah:ayah numbers inside the answer. Keep quotes balanced and closed.");
+            promptBuilder.AppendLine(BuildLanguageInstruction(responseLanguage));
             promptBuilder.AppendLine("Context:");
             promptBuilder.AppendLine(contextBuilder.ToString());
             promptBuilder.AppendLine("Question: " + question);
@@ -338,6 +344,112 @@ namespace JihadAttorney.Llama
             }
 
             return sum;
+        }
+
+        private bool TryHandleSlashQuery(string question, out string response)
+        {
+            response = string.Empty;
+
+            var trimmed = question.Trim();
+            if (!trimmed.StartsWith("/"))
+            {
+                return false;
+            }
+
+            var payload = trimmed[1..].Trim();
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                return false;
+            }
+
+            var surahPart = payload;
+            var versePart = string.Empty;
+
+            var colonIndex = payload.IndexOf(':');
+            if (colonIndex >= 0)
+            {
+                surahPart = payload[..colonIndex];
+                versePart = payload[(colonIndex + 1)..];
+            }
+
+            if (!int.TryParse(surahPart, out var surahId))
+            {
+                return false;
+            }
+
+            var surah = _surahs.FirstOrDefault(s => s.Id == surahId);
+            if (surah == null)
+            {
+                response = $"Sure {surahId} nicht gefunden.";
+                return true;
+            }
+
+            IReadOnlyList<int> versesToReturn;
+
+            if (string.IsNullOrWhiteSpace(versePart))
+            {
+                versesToReturn = surah.Verses.Select(v => v.Id).ToList();
+            }
+            else if (versePart.Contains('-'))
+            {
+                var rangeParts = versePart.Split('-', 2);
+                if (rangeParts.Length != 2 ||
+                    !int.TryParse(rangeParts[0], out var start) ||
+                    !int.TryParse(rangeParts[1], out var end) ||
+                    start <= 0 || end < start)
+                {
+                    response = $"Ungültiger Vers-Bereich: {versePart}";
+                    return true;
+                }
+
+                if (start > surah.Verses.Count || end > surah.Verses.Count)
+                {
+                    response = surah.Transliteration;
+                    return true;
+                }
+
+                versesToReturn = surah.Verses
+                    .Where(v => v.Id >= start && v.Id <= end)
+                    .Select(v => v.Id)
+                    .ToList();
+            }
+            else if (int.TryParse(versePart, out var singleVerse))
+            {
+                if (singleVerse <= 0 || singleVerse > surah.Verses.Count)
+                {
+                    response = surah.Transliteration;
+                    return true;
+                }
+
+                versesToReturn = new[] { singleVerse };
+            }
+            else
+            {
+                response = $"Ungültige Eingabe nach Sure: {versePart}";
+                return true;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"{surah.Transliteration} ({surah.Id})");
+
+            foreach (var verseId in versesToReturn)
+            {
+                var verse = surah.Verses.First(v => v.Id == verseId);
+                sb.AppendLine($"{surah.Id}:{verse.Id} | {verse.Text} / {verse.Translation}");
+            }
+
+            response = sb.ToString().TrimEnd();
+            return true;
+        }
+
+        private static string BuildLanguageInstruction(string responseLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(responseLanguage) || responseLanguage.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Detect the language of the question and answer in that language.";
+            }
+
+            return $"Answer in {responseLanguage}. If the question is in a different language, still respond in {responseLanguage}.";
         }
 
         private class Surah

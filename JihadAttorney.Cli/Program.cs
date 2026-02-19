@@ -100,21 +100,16 @@ namespace JihadAttorney.Cli
                     break;
                 }
 
-                if (question.StartsWith("/"))
-                {
-                    var cmd = question.Substring(1);
-                    var result = llama.GetReferenceText(cmd);
-                    Console.WriteLine(result);
-                    Console.WriteLine();
-                    continue;
-                }
-
                 try
                 {
-                    var answer = await llama.AnswerQuestionAsync(question.Trim(), responseLanguage);
                     Console.WriteLine();
                     Console.WriteLine("Antwort:");
-                    Console.WriteLine(answer);
+                    await foreach (var chunk in llama.AnswerQuestionStreamAsync(question.Trim(), responseLanguage))
+                    {
+                        Console.Write(chunk);
+                    }
+
+                    Console.WriteLine();
                     Console.WriteLine();
                 }
                 catch (Exception ex)

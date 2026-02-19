@@ -17,12 +17,14 @@ namespace JihadAttorney.Llama
         private const int EmbeddingDimensions = 384;
 
         private readonly List<Surah> _surahs = new();
+        private readonly List<HadithBook> _hadithBooks = new();
         private List<VerseEmbedding>? _embeddings;
         private string? _selectedModelPath;
 
         public LlamaService()
         {
             LoadQuran();
+            LoadHadiths();
             EnsureEmbeddings();
         }
 
@@ -60,16 +62,13 @@ namespace JihadAttorney.Llama
             }
 
             EnsureEmbeddings();
-            EnsureOpenClBackend();
-
             ModelParams @params = new ModelParams(_selectedModelPath)
             {
-                ContextSize = 2048,
-                GpuLayerCount = 99
+                ContextSize = 1024,
+                GpuLayerCount = 0
             };
 
             using LLamaWeights weights = LLamaWeights.LoadFromFile(@params);
-            using LLamaContext context = weights.CreateContext(@params);
             StatelessExecutor executor = new StatelessExecutor(weights, @params, null);
 
             InferenceParams warmupParams = new InferenceParams
@@ -124,7 +123,7 @@ namespace JihadAttorney.Llama
             }
 
             var promptBuilder = new StringBuilder();
-            promptBuilder.AppendLine("You are a concise assistant. Answer in your own words based only on the provided Qur'an context. When you refer to verses, cite them as surah:ayah numbers inside the answer. Keep quotes balanced and closed.");
+            promptBuilder.AppendLine("You are a concise assistant. Answer in your own words based only on the provided Qur'an and hadith context. When you refer to verses, cite them as surah:ayah numbers inside the answer. When you refer to hadith, cite them as hadith:bookId:hadithId. Keep quotes balanced and closed.");
             promptBuilder.AppendLine(BuildLanguageInstruction(responseLanguage));
             promptBuilder.AppendLine("Context:");
             promptBuilder.AppendLine(contextBuilder.ToString());
@@ -147,19 +146,32 @@ namespace JihadAttorney.Llama
             var sb = new StringBuilder();
             foreach (var reference in references)
             {
-                if (!TryFindVerse(reference, out var surah, out var verse))
+                if (TryFindVerse(reference, out var surah, out var verse))
                 {
+                    sb.Append("- ")
+                      .Append(reference)
+                      .Append(" | ")
+                      .Append(surah!.Transliteration)
+                      .AppendLine()
+                      .AppendLine(verse!.Text)
+                      .AppendLine(verse.Translation)
+                      .AppendLine();
                     continue;
                 }
 
-                sb.Append("- ")
-                  .Append(reference)
-                  .Append(" | ")
-                  .Append(surah!.Transliteration)
-                  .AppendLine()
-                  .AppendLine(verse!.Text)
-                  .AppendLine(verse.Translation)
-                  .AppendLine();
+                if (TryFindHadith(reference, out var book, out var hadith))
+                {
+                    var title = book.Metadata?.English?.Title ?? $"Book {book.Id}";
+                    var narrator = hadith.English?.Narrator ?? string.Empty;
+                    var text = hadith.English?.Text ?? string.Empty;
+                    sb.Append("- ")
+                      .Append(reference)
+                      .Append(" | ")
+                      .AppendLine(title)
+                      .AppendLine(narrator)
+                      .AppendLine(text)
+                      .AppendLine();
+                }
             }
 
             return sb.ToString().TrimEnd();
@@ -186,30 +198,94 @@ namespace JihadAttorney.Llama
             return surah != null && verse != null;
         }
 
+        private bool TryFindHadith(string reference, out HadithBook? book, out HadithEntry? hadith)
+        {
+            book = null;
+            hadith = null;
+
+            if (!reference.StartsWith("hadith:", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var parts = reference.Split(':');
+            if (parts.Length != 3)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(parts[1], out var bookId) || !int.TryParse(parts[2], out var hadithId))
+            {
+                return false;
+            }
+
+            book = _hadithBooks.FirstOrDefault(b => b.Id == bookId);
+            hadith = book?.Hadiths.FirstOrDefault(h => h.IdInBook == hadithId);
+            return book != null && hadith != null;
+        }
+
+        public async IAsyncEnumerable<string> AnswerQuestionStreamAsync(string question, string responseLanguage = "auto", int topK = 3, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(question))
+            {
+                throw new ArgumentException("Question must not be empty", nameof(question));
+            }
+
+            if (TryHandleSlashQuery(question, out var slashResponse))
+            {
+                yield return slashResponse;
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(_selectedModelPath))
+            {
+                throw new InvalidOperationException("No model selected. Call SelectModelByIndex first.");
+            }
+
+            EnsureEmbeddings();
+            var queryEmbedding = Embed(question);
+            var nearest = _embeddings!
+                .Select(e => new { Embedding = e, Score = CosineSimilarity(queryEmbedding, e.Vector) })
+                .OrderByDescending(x => x.Score)
+                .Take(Math.Max(1, topK))
+                .ToList();
+
+            var contextBuilder = new StringBuilder();
+            foreach (var item in nearest)
+            {
+                contextBuilder
+                    .Append(item.Embedding.Reference)
+                    .Append(" | score=")
+                    .Append(item.Score.ToString("F3"))
+                    .AppendLine()
+                    .AppendLine(item.Embedding.Text)
+                    .AppendLine();
+            }
+
+            var promptBuilder = new StringBuilder();
+            promptBuilder.AppendLine("You are a concise assistant. Answer in your own words based only on the provided Qur'an and hadith context. When you refer to verses, cite them as surah:ayah numbers inside the answer. When you refer to hadith, cite them as hadith:bookId:hadithId. Keep quotes balanced and closed. Answer in the language the user put his question.");
+            promptBuilder.AppendLine(BuildLanguageInstruction(responseLanguage));
+            promptBuilder.AppendLine("Context:");
+            promptBuilder.AppendLine(contextBuilder.ToString());
+            promptBuilder.AppendLine("Question: " + question);
+            promptBuilder.Append("Answer:");
+
+            await foreach (var token in RunLlamaStreamAsync(promptBuilder.ToString(), cancellationToken))
+            {
+                yield return token;
+            }
+
+            var references = BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
+            if (!string.IsNullOrWhiteSpace(references))
+            {
+                yield return "\n\nReferenzen:\n" + references;
+            }
+        }
+
         private async Task<string> RunLlamaAsync(string prompt, CancellationToken cancellationToken)
         {
-            EnsureOpenClBackend();
-
-            var @params = new ModelParams(_selectedModelPath!)
-            {
-                ContextSize = 2048,
-                GpuLayerCount = 99
-            };
-
-            var inferenceParams = new InferenceParams
-            {
-                MaxTokens = 512,
-                AntiPrompts = new[] { "User:", "Question:" }
-            };
-
-            using var weights = LLamaWeights.LoadFromFile(@params);
-            using var context = weights.CreateContext(@params);
-            var executor = new StatelessExecutor(weights, @params, null);
-
             var sb = new StringBuilder();
-            await foreach (var token in executor
-                .InferAsync(prompt, inferenceParams)
-                .WithCancellation(cancellationToken))
+            await foreach (var token in RunLlamaStreamAsync(prompt, cancellationToken))
             {
                 sb.Append(token);
             }
@@ -217,9 +293,29 @@ namespace JihadAttorney.Llama
             return sb.ToString().Trim();
         }
 
-        private void EnsureOpenClBackend()
+        private async IAsyncEnumerable<string> RunLlamaStreamAsync(string prompt, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            // Default backend (CPU/native) is used; OpenCL package removed because it lacks gemma3 support.
+            var @params = new ModelParams(_selectedModelPath!)
+            {
+                ContextSize = 8192,
+                GpuLayerCount = 99
+            };
+
+            var inferenceParams = new InferenceParams
+            {
+                MaxTokens = 4096,
+                AntiPrompts = new[] { "User:", "Question:" }
+            };
+
+            using var weights = LLamaWeights.LoadFromFile(@params);
+            var executor = new StatelessExecutor(weights, @params, null);
+
+            await foreach (var token in executor
+                .InferAsync(prompt, inferenceParams)
+                .WithCancellation(cancellationToken))
+            {
+                yield return token;
+            }
         }
 
         private void LoadQuran()
@@ -244,7 +340,7 @@ namespace JihadAttorney.Llama
             }
             else
             {
-                var fallbackPath = Path.Combine(AppContext.BaseDirectory, "quran_en.json");
+                var fallbackPath = Path.Combine(AppContext.BaseDirectory, "Ressources", "quran_en.json");
                 json = File.ReadAllText(fallbackPath);
             }
 
@@ -252,6 +348,40 @@ namespace JihadAttorney.Llama
             if (data != null)
             {
                 _surahs.AddRange(data);
+            }
+        }
+
+        private void LoadHadiths()
+        {
+            if (_hadithBooks.Count > 0)
+            {
+                return;
+            }
+
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceNames = assembly
+                .GetManifestResourceNames()
+                .Where(n => n.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                         && !n.EndsWith("quran_en.json", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(n => n)
+                .ToList();
+
+            foreach (var resourceName in resourceNames)
+            {
+                using var stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream == null)
+                {
+                    continue;
+                }
+
+                using var reader = new StreamReader(stream);
+                var json = reader.ReadToEnd();
+
+                var book = JsonConvert.DeserializeObject<HadithBook>(json);
+                if (book != null)
+                {
+                    _hadithBooks.Add(book);
+                }
             }
         }
 
@@ -273,6 +403,23 @@ namespace JihadAttorney.Llama
                         Reference = $"{surah.Id}:{verse.Id}",
                         Text = text,
                         Vector = Embed(text)
+                    });
+                }
+            }
+
+            foreach (var book in _hadithBooks)
+            {
+                var bookTitle = book.Metadata?.English?.Title ?? $"Book {book.Id}";
+                foreach (var hadith in book.Hadiths)
+                {
+                    var narrator = hadith.English?.Narrator ?? string.Empty;
+                    var hadithText = hadith.English?.Text ?? string.Empty;
+                    var combined = $"{bookTitle} (Hadith {hadith.IdInBook}) - {narrator} {hadithText}";
+                    embeddings.Add(new VerseEmbedding
+                    {
+                        Reference = $"hadith:{book.Id}:{hadith.IdInBook}",
+                        Text = combined,
+                        Vector = Embed(combined)
                     });
                 }
             }
@@ -481,6 +628,93 @@ namespace JihadAttorney.Llama
             public string Reference { get; set; } = string.Empty;
             public string Text { get; set; } = string.Empty;
             public float[] Vector { get; set; } = Array.Empty<float>();
+        }
+
+        private class HadithBook
+        {
+            [JsonProperty("id")]
+            public int Id { get; set; }
+
+            [JsonProperty("metadata")]
+            public HadithMetadata? Metadata { get; set; }
+
+            [JsonProperty("chapters")]
+            public List<HadithChapter> Chapters { get; set; } = new();
+
+            [JsonProperty("hadiths")]
+            public List<HadithEntry> Hadiths { get; set; } = new();
+        }
+
+        private class HadithMetadata
+        {
+            [JsonProperty("id")]
+            public int Id { get; set; }
+
+            [JsonProperty("length")]
+            public int Length { get; set; }
+
+            [JsonProperty("arabic")]
+            public HadithLocalizedMeta? Arabic { get; set; }
+
+            [JsonProperty("english")]
+            public HadithLocalizedMeta? English { get; set; }
+        }
+
+        private class HadithLocalizedMeta
+        {
+            [JsonProperty("title")]
+            public string Title { get; set; } = string.Empty;
+
+            [JsonProperty("author")]
+            public string Author { get; set; } = string.Empty;
+
+            [JsonProperty("introduction")]
+            public string Introduction { get; set; } = string.Empty;
+        }
+
+        private class HadithChapter
+        {
+            [JsonProperty("id")]
+            public int? Id { get; set; }
+
+            [JsonProperty("bookId")]
+            public int BookId { get; set; }
+
+            [JsonProperty("arabic")]
+            public string Arabic { get; set; } = string.Empty;
+
+            [JsonProperty("english")]
+            public string English { get; set; } = string.Empty;
+        }
+
+        private class HadithEntry
+        {
+            [JsonProperty("id")]
+            public int Id { get; set; }
+
+            [JsonProperty("idInBook")]
+            public int IdInBook { get; set; }
+
+            [JsonProperty("chapterId")]
+            public int? ChapterId { get; set; } // nullable
+
+            [JsonProperty("bookId")]
+            public int BookId { get; set; }
+
+            [JsonProperty("arabic")]
+            public string Arabic { get; set; } = string.Empty;
+
+            [JsonProperty("english")]
+            public HadithEnglish? English { get; set; }
+        }
+
+        private class HadithEnglish
+        {
+            [JsonProperty("narrator")]
+            public string Narrator { get; set; } = string.Empty;
+
+            [JsonProperty("text")]
+            public string Text { get; set; } = string.Empty;
         }
 
         public string GetReferenceText(string command)

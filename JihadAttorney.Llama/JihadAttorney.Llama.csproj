@@ -8,16 +8,87 @@
 
   <ItemGroup>
     <None Remove="quran_en.json" />
+    <None Remove="Ressources\9 books\abudawud.json" />
+    <None Remove="Ressources\9 books\ahmed.json" />
+    <None Remove="Ressources\9 books\bukhari.json" />
+    <None Remove="Ressources\9 books\darimi.json" />
+    <None Remove="Ressources\9 books\ibnmajah.json" />
+    <None Remove="Ressources\9 books\malik.json" />
+    <None Remove="Ressources\9 books\muslim.json" />
+    <None Remove="Ressources\9 books\nasai.json" />
+    <None Remove="Ressources\9 books\tirmidhi.json" />
+    <None Remove="Ressources\forties\nawawi40.json" />
+    <None Remove="Ressources\forties\qudsi40.json" />
+    <None Remove="Ressources\forties\shahwaliullah40.json" />
+    <None Remove="Ressources\other books\aladab_almufrad.json" />
+    <None Remove="Ressources\other books\bulugh_almaram.json" />
+    <None Remove="Ressources\other books\mishkat_almasabih.json" />
+    <None Remove="Ressources\other books\riyad_assalihin.json" />
+    <None Remove="Ressources\other books\shamail_muhammadiyah.json" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="quran_en.json" />
+    <EmbeddedResource Include="Ressources\quran_en.json" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="LLamaSharp" Version="0.25.0" />
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.25.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Ressources\9 books\abudawud.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\ahmed.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\bukhari.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\darimi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\ibnmajah.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\malik.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\muslim.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\nasai.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\9 books\tirmidhi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\forties\nawawi40.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\forties\qudsi40.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\forties\shahwaliullah40.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\other books\aladab_almufrad.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\other books\bulugh_almaram.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\other books\mishkat_almasabih.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\other books\riyad_assalihin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ressources\other books\shamail_muhammadiyah.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

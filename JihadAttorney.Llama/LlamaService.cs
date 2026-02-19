@@ -23,9 +23,9 @@ namespace JihadAttorney.Llama
 
         public LlamaService()
         {
-            LoadQuran();
-            LoadHadiths();
-            EnsureEmbeddings();
+            this.LoadQuran();
+            this.LoadHadiths();
+            this.EnsureEmbeddings();
         }
 
         public IReadOnlyList<string> GetAvailableModels(string modelsRoot = "D:\\Models")
@@ -43,26 +43,26 @@ namespace JihadAttorney.Llama
 
         public bool SelectModelByIndex(int index, string modelsRoot = "D:\\Models")
         {
-            var models = GetAvailableModels(modelsRoot);
+            var models = this.GetAvailableModels(modelsRoot);
             if (index < 0 || index >= models.Count)
             {
                 return false;
             }
 
-            _selectedModelPath = models[index];
+            this._selectedModelPath = models[index];
             return true;
         }
 
         // Fix for CS1503, CS1674, IDE0008 in PrepareAsync
         public async Task PrepareAsync(CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_selectedModelPath))
+            if (string.IsNullOrWhiteSpace(this._selectedModelPath))
             {
                 throw new InvalidOperationException("Kein Modell ausgewählt. Bitte SelectModelByIndex aufrufen.");
             }
 
-            EnsureEmbeddings();
-            ModelParams @params = new ModelParams(_selectedModelPath)
+            this.EnsureEmbeddings();
+            ModelParams @params = new ModelParams(this._selectedModelPath)
             {
                 ContextSize = 1024,
                 GpuLayerCount = 0
@@ -92,19 +92,19 @@ namespace JihadAttorney.Llama
                 throw new ArgumentException("Question must not be empty", nameof(question));
             }
 
-            if (TryHandleSlashQuery(question, out var slashResponse))
+            if (this.TryHandleSlashQuery(question, out var slashResponse))
             {
                 return slashResponse;
             }
 
-            if (string.IsNullOrWhiteSpace(_selectedModelPath))
+            if (string.IsNullOrWhiteSpace(this._selectedModelPath))
             {
                 throw new InvalidOperationException("No model selected. Call SelectModelByIndex first.");
             }
 
-            EnsureEmbeddings();
+            this.EnsureEmbeddings();
             var queryEmbedding = Embed(question);
-            var nearest = _embeddings!
+            var nearest = this._embeddings!
                 .Select(e => new { Embedding = e, Score = CosineSimilarity(queryEmbedding, e.Vector) })
                 .OrderByDescending(x => x.Score)
                 .Take(Math.Max(1, topK))
@@ -130,9 +130,9 @@ namespace JihadAttorney.Llama
             promptBuilder.AppendLine("Question: " + question);
             promptBuilder.Append("Answer:");
 
-            var answer = await RunLlamaAsync(promptBuilder.ToString(), cancellationToken);
+            var answer = await this.RunLlamaAsync(promptBuilder.ToString(), cancellationToken);
 
-            var references = BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
+            var references = this.BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
             if (!string.IsNullOrWhiteSpace(references)) 
             {
                 return string.Concat(answer, "\n\nReferenzen:\n", references);
@@ -146,7 +146,7 @@ namespace JihadAttorney.Llama
             var sb = new StringBuilder();
             foreach (var reference in references)
             {
-                if (TryFindVerse(reference, out var surah, out var verse))
+                if (this.TryFindVerse(reference, out var surah, out var verse))
                 {
                     sb.Append("- ")
                       .Append(reference)
@@ -159,7 +159,7 @@ namespace JihadAttorney.Llama
                     continue;
                 }
 
-                if (TryFindHadith(reference, out var book, out var hadith))
+                if (this.TryFindHadith(reference, out var book, out var hadith))
                 {
                     var title = book.Metadata?.English?.Title ?? $"Book {book.Id}";
                     var narrator = hadith.English?.Narrator ?? string.Empty;
@@ -193,7 +193,7 @@ namespace JihadAttorney.Llama
                 return false;
             }
 
-            surah = _surahs.FirstOrDefault(s => s.Id == surahId);
+            surah = this._surahs.FirstOrDefault(s => s.Id == surahId);
             verse = surah?.Verses.FirstOrDefault(v => v.Id == verseId);
             return surah != null && verse != null;
         }
@@ -219,7 +219,7 @@ namespace JihadAttorney.Llama
                 return false;
             }
 
-            book = _hadithBooks.FirstOrDefault(b => b.Id == bookId);
+            book = this._hadithBooks.FirstOrDefault(b => b.Id == bookId);
             hadith = book?.Hadiths.FirstOrDefault(h => h.IdInBook == hadithId);
             return book != null && hadith != null;
         }
@@ -231,20 +231,20 @@ namespace JihadAttorney.Llama
                 throw new ArgumentException("Question must not be empty", nameof(question));
             }
 
-            if (TryHandleSlashQuery(question, out var slashResponse))
+            if (this.TryHandleSlashQuery(question, out var slashResponse))
             {
                 yield return slashResponse;
                 yield break;
             }
 
-            if (string.IsNullOrWhiteSpace(_selectedModelPath))
+            if (string.IsNullOrWhiteSpace(this._selectedModelPath))
             {
                 throw new InvalidOperationException("No model selected. Call SelectModelByIndex first.");
             }
 
-            EnsureEmbeddings();
+            this.EnsureEmbeddings();
             var queryEmbedding = Embed(question);
-            var nearest = _embeddings!
+            var nearest = this._embeddings!
                 .Select(e => new { Embedding = e, Score = CosineSimilarity(queryEmbedding, e.Vector) })
                 .OrderByDescending(x => x.Score)
                 .Take(Math.Max(1, topK))
@@ -270,12 +270,12 @@ namespace JihadAttorney.Llama
             promptBuilder.AppendLine("Question: " + question);
             promptBuilder.Append("Answer:");
 
-            await foreach (var token in RunLlamaStreamAsync(promptBuilder.ToString(), cancellationToken))
+            await foreach (var token in this.RunLlamaStreamAsync(promptBuilder.ToString(), cancellationToken))
             {
                 yield return token;
             }
 
-            var references = BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
+            var references = this.BuildReferenceBlock(nearest.Select(n => n.Embedding.Reference));
             if (!string.IsNullOrWhiteSpace(references))
             {
                 yield return "\n\nReferenzen:\n" + references;
@@ -285,7 +285,7 @@ namespace JihadAttorney.Llama
         private async Task<string> RunLlamaAsync(string prompt, CancellationToken cancellationToken)
         {
             var sb = new StringBuilder();
-            await foreach (var token in RunLlamaStreamAsync(prompt, cancellationToken))
+            await foreach (var token in this.RunLlamaStreamAsync(prompt, cancellationToken))
             {
                 sb.Append(token);
             }
@@ -295,10 +295,10 @@ namespace JihadAttorney.Llama
 
         private async IAsyncEnumerable<string> RunLlamaStreamAsync(string prompt, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            var @params = new ModelParams(_selectedModelPath!)
+            var @params = new ModelParams(this._selectedModelPath!)
             {
                 ContextSize = 8192,
-                GpuLayerCount = 99
+                GpuLayerCount = 999
             };
 
             var inferenceParams = new InferenceParams
@@ -320,7 +320,7 @@ namespace JihadAttorney.Llama
 
         private void LoadQuran()
         {
-            if (_surahs.Count > 0)
+            if (this._surahs.Count > 0)
             {
                 return;
             }
@@ -347,13 +347,13 @@ namespace JihadAttorney.Llama
             var data = JsonConvert.DeserializeObject<List<Surah>>(json);
             if (data != null)
             {
-                _surahs.AddRange(data);
+                this._surahs.AddRange(data);
             }
         }
 
         private void LoadHadiths()
         {
-            if (_hadithBooks.Count > 0)
+            if (this._hadithBooks.Count > 0)
             {
                 return;
             }
@@ -380,20 +380,20 @@ namespace JihadAttorney.Llama
                 var book = JsonConvert.DeserializeObject<HadithBook>(json);
                 if (book != null)
                 {
-                    _hadithBooks.Add(book);
+                    this._hadithBooks.Add(book);
                 }
             }
         }
 
         private void EnsureEmbeddings()
         {
-            if (_embeddings != null)
+            if (this._embeddings != null)
             {
                 return;
             }
 
             var embeddings = new List<VerseEmbedding>();
-            foreach (var surah in _surahs)
+            foreach (var surah in this._surahs)
             {
                 foreach (var verse in surah.Verses)
                 {
@@ -407,7 +407,7 @@ namespace JihadAttorney.Llama
                 }
             }
 
-            foreach (var book in _hadithBooks)
+            foreach (var book in this._hadithBooks)
             {
                 var bookTitle = book.Metadata?.English?.Title ?? $"Book {book.Id}";
                 foreach (var hadith in book.Hadiths)
@@ -424,7 +424,7 @@ namespace JihadAttorney.Llama
                 }
             }
 
-            _embeddings = embeddings;
+            this._embeddings = embeddings;
         }
 
         private static float[] Embed(string text)
@@ -524,7 +524,7 @@ namespace JihadAttorney.Llama
                 return false;
             }
 
-            var surah = _surahs.FirstOrDefault(s => s.Id == surahId);
+            var surah = this._surahs.FirstOrDefault(s => s.Id == surahId);
             if (surah == null)
             {
                 response = $"Sure {surahId} nicht gefunden.";
@@ -734,7 +734,7 @@ namespace JihadAttorney.Llama
                     return "Ungültiges Ayah-Format.";
                 }
 
-                var surah = _surahs.FirstOrDefault(s => s.Id == surahId);
+                var surah = this._surahs.FirstOrDefault(s => s.Id == surahId);
                 if (surah == null)
                 {
                     return "Sure nicht gefunden.";
@@ -746,7 +746,7 @@ namespace JihadAttorney.Llama
                     var range = ayaPart.Split('-');
                     if (range.Length == 2 && int.TryParse(range[0], out var start) && int.TryParse(range[1], out var end))
                     {
-                        return BuildSurahRange(surah, start, end);
+                        return this.BuildSurahRange(surah, start, end);
                     }
 
                     return "Ungültiger Ayah-Bereich.";
@@ -757,7 +757,7 @@ namespace JihadAttorney.Llama
                     return "Ungültige Ayah.";
                 }
 
-                return BuildSurahRange(surah, ayaId, ayaId);
+                return this.BuildSurahRange(surah, ayaId, ayaId);
             }
 
             // surah or surah-range: 23 or 23-24
@@ -769,10 +769,10 @@ namespace JihadAttorney.Llama
                     var sb = new StringBuilder();
                     for (var id = start; id <= end; id++)
                     {
-                        var surah = _surahs.FirstOrDefault(s => s.Id == id);
+                        var surah = this._surahs.FirstOrDefault(s => s.Id == id);
                         if (surah != null)
                         {
-                            sb.AppendLine(BuildSurahRange(surah, 1, surah.Verses.Count)).AppendLine();
+                            sb.AppendLine(this.BuildSurahRange(surah, 1, surah.Verses.Count)).AppendLine();
                         }
                     }
 
@@ -787,13 +787,13 @@ namespace JihadAttorney.Llama
                 return "Ungültige Sure.";
             }
 
-            var target = _surahs.FirstOrDefault(s => s.Id == surahOnly);
+            var target = this._surahs.FirstOrDefault(s => s.Id == surahOnly);
             if (target == null)
             {
                 return "Sure nicht gefunden.";
             }
 
-            return BuildSurahRange(target, 1, target.Verses.Count);
+            return this.BuildSurahRange(target, 1, target.Verses.Count);
         }
 
         private string BuildSurahRange(Surah surah, int startAya, int endAya)

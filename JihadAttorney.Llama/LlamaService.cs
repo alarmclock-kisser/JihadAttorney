@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -8,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LLama;
 using LLama.Common;
+using LLama.Native;
 using Newtonsoft.Json;
 
 namespace JihadAttorney.Llama
@@ -20,9 +22,12 @@ namespace JihadAttorney.Llama
         private readonly List<HadithBook> _hadithBooks = new();
         private List<VerseEmbedding>? _embeddings;
         private string? _selectedModelPath;
+        private readonly object _runtimeLogLock = new();
+        private StreamWriter? _runtimeLogWriter;
 
-        public LlamaService()
+        public LlamaService(string runtimeLogMode = "off", string? runtimeLogFilePath = null)
         {
+            this.ConfigureRuntimeLogging(runtimeLogMode, runtimeLogFilePath);
             this.LoadQuran();
             this.LoadHadiths();
             this.EnsureEmbeddings();
@@ -597,6 +602,64 @@ namespace JihadAttorney.Llama
             }
 
             return $"Answer in {responseLanguage}. If the question is in a different language, still respond in {responseLanguage}.";
+        }
+
+        private void ConfigureRuntimeLogging(string runtimeLogMode, string? runtimeLogFilePath)
+        {
+            var mode = string.IsNullOrWhiteSpace(runtimeLogMode) ? "off" : runtimeLogMode.Trim().ToLowerInvariant();
+
+            if (mode is "console" or "default")
+            {
+                return;
+            }
+
+            if (mode is "off" or "none" or "disabled")
+            {
+                NativeLogConfig.llama_log_set((_, _) => { });
+                return;
+            }
+
+            if (mode is "file" or "window")
+            {
+                var logPath = string.IsNullOrWhiteSpace(runtimeLogFilePath)
+                    ? Path.Combine(AppContext.BaseDirectory, "llama-runtime.log")
+                    : runtimeLogFilePath;
+
+                var directory = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                this._runtimeLogWriter = new StreamWriter(new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                {
+                    AutoFlush = true
+                };
+
+                NativeLogConfig.llama_log_set((level, message) =>
+                {
+                    lock (this._runtimeLogLock)
+                    {
+                        this._runtimeLogWriter?.Write($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {level}: {message}");
+                    }
+                });
+
+                if (mode == "window")
+                {
+                    var escapedPath = logPath.Replace("'", "''");
+                    var startInfo = new ProcessStartInfo("powershell.exe", $"-NoExit -Command \"Get-Content -Path '{escapedPath}' -Wait\"")
+                    {
+                        UseShellExecute = true,
+                        CreateNoWindow = false
+                    };
+
+                    Process.Start(startInfo);
+                }
+
+                return;
+            }
+
+            NativeLogConfig.llama_log_set((_, _) => { });
         }
 
         private class Surah

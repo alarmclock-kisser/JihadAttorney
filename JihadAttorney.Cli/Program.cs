@@ -19,20 +19,24 @@ namespace JihadAttorney.Cli
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
                 .Build();
 
-            var responseLanguage = configuration["ResponseLanguage"]?.Trim();
+            var responseLanguage = configuration.GetSection("ResponseLanguage")?.Value?.Trim();
             if (string.IsNullOrWhiteSpace(responseLanguage))
             {
                 responseLanguage = "auto";
             }
 
-            var preferredModel = configuration["PreferredModel"]?.Trim() ?? string.Empty;
+            var modelsDirectory = configuration.GetSection("ModelsDirectory")?.Value?.Trim();
 
-            var llama = new LlamaService();
-            Console.WriteLine("Suche Modelle in D:\\Models ...");
-            var models = llama.GetAvailableModels();
+            var preferredModel = configuration.GetSection("PreferredModel")?.Value?.Trim() ?? string.Empty;
+            var runtimeLogMode = configuration.GetSection("LlamaRuntimeLogMode")?.Value?.Trim() ?? "off";
+            var runtimeLogFilePath = configuration.GetSection("LlamaRuntimeLogFilePath")?.Value?.Trim() ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "llama-runtime.log");
+
+            var llama = new LlamaService(runtimeLogMode, runtimeLogFilePath);
+            Console.WriteLine($"Suche Modelle in {modelsDirectory} ...");
+            var models = llama.GetAvailableModels(modelsDirectory ?? "D:\\Models");
             if (!models.Any())
             {
-                Console.WriteLine("Keine gguf-Modelle gefunden unter D:\\Models.");
+                Console.WriteLine($"Keine gguf-Modelle gefunden unter {modelsDirectory}.");
                 return;
             }
 
@@ -56,7 +60,12 @@ namespace JihadAttorney.Cli
             {
                 for (var i = 0; i < models.Count; i++)
                 {
-                    Console.WriteLine($"[{i}] {models[i]}");
+                    if (models[i].Contains("mmproj", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    Console.WriteLine($"[{i}] {Path.GetFileNameWithoutExtension(models[i])}");
                 }
 
                 while (true)

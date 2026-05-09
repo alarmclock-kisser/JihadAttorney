@@ -27,6 +27,7 @@ namespace JihadAttorney.Llama
 
         public LlamaService(string runtimeLogMode = "off", string? runtimeLogFilePath = null)
         {
+            this.ConfigureNativeBackendPreference();
             this.ConfigureRuntimeLogging(runtimeLogMode, runtimeLogFilePath);
             this.LoadQuran();
             this.LoadHadiths();
@@ -602,6 +603,13 @@ namespace JihadAttorney.Llama
             }
 
             return $"Answer in {responseLanguage}. If the question is in a different language, still respond in {responseLanguage}.";
+        }
+
+        private void ConfigureNativeBackendPreference()
+        {
+            NativeLibraryConfig.All
+                .WithCuda(true)
+                .WithAutoFallback(true);
         }
 
         private void ConfigureRuntimeLogging(string runtimeLogMode, string? runtimeLogFilePath)
